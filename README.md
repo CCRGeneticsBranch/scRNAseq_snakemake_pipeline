@@ -1,4 +1,4 @@
-Snakemake pipeline for scRNA-seq gene expression data analysis.
+Snakemake pipeline for scRNA-seq gene expression data analysis in biowulf.
 Starts from cellRanger output.
 
 Inputs:
