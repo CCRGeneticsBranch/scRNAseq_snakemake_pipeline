@@ -1,18 +1,16 @@
-loc = "/data/CCBR_Pipeliner/db/PipeDB/scrna4.2Rlibs"
-library(htmltools,lib.loc=loc)
-library(Seurat,lib.loc=loc)
-library(stringr)#,lib.loc=loc)
+loc = "/data/khanlab/ref/scRNAseq/Rlibs/"
+library(Seurat)
+library(EnsDb.Hsapiens.v86,lib.loc ="/data/khanlab/ref/scRNAseq/Rlibs/")
+library(EnsDb.Mmusculus.v79,lib.loc ="/data/khanlab/ref/scRNAseq/Rlibs/")
+library(Routliers,lib.loc=loc)
+library(stringr)
 library("DoubletFinder",lib.loc=loc)
-library(SingleR,lib.loc=loc)
-library(scRNAseq,lib.loc=loc)
-library(SingleCellExperiment,lib.loc=loc)
+library(SingleR)
+library(scRNAseq)
+library(SingleCellExperiment)
+library(scater)
+library(stringr)
 library(celldex,lib.loc=loc)
-library(Orthology.eg.db,lib.loc=loc)
-library(org.Mm.eg.db,lib.loc=loc)
-library(org.Hs.eg.db,lib.loc=loc)
-library(flexmix,lib.loc=loc)
-library(SeuratWrappers,lib.loc=loc)
-library(djvdj,lib.loc=loc)
 
 args <- commandArgs(trailingOnly = T)
 
@@ -22,25 +20,7 @@ ref =  as.character(args[2])
 outFile = as.character(args[3])
 rnaCounts = Read10X_h5(h5)
 
-if(class(rnaCounts) == "list") {rnaCounts = rnaCounts$'Gene Expression'}
-
-so <- CreateSeuratObject(rnaCounts)
-
-
-groupFile = read.delim("groups.tab",header=F,stringsAsFactors = F)
-
-sample = groupFile$V3[groupFile$V1 == tail(strsplit(h5,"/")[[1]],3)[1] & groupFile$V4 == "gex"]
-
-print(groupFile[groupFile$V3 == sample & groupFile$V4 == "vdj",])
-
-if (nrow(groupFile[groupFile$V3 == sample & groupFile$V4 == "vdj",]) > 0 ) {
-
-tcrSamples = groupFile$V1[groupFile$V3 == sample & groupFile$V4 == "vdj"]
-tcrSamples = paste0("cellrangerOut/",tcrSamples,"/outs")
-
-so = import_vdj(input = so, vdj_dir = tcrSamples,  filter_paired = FALSE  )
-
-}
+so <- CreateSeuratObject(counts = rnaCounts)
 
 
 ###Run Seurat Clustering 
@@ -48,9 +28,10 @@ seuratClustering = function(so){
 
 
 
-so$Sample = tail(strsplit(h5,"/")[[1]],1)
+so$Sample = head(strsplit(h5,"/")[[1]],1)
 
 
+so = SCTransform(so)
 
 so <- RunPCA(object = so, features = VariableFeatures(object = so), do.print = TRUE, pcs.print = 1:5,genes.print = 0,verbose=F,npcs = 30)
 
@@ -63,6 +44,12 @@ so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.2,algorith
 so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.5,algorithm = 3)
 so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.6,algorithm = 3)
 so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.8,algorithm = 3)
+
+so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.1,algorithm = 4)
+so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.2,algorithm = 4)
+so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.5,algorithm = 4)
+so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.6,algorithm = 4)
+so <- FindClusters(so,dims = 1:npcs, print.output = 0, resolution = 0.8,algorithm = 4)
 
 
 so <- RunUMAP(so,dims = 1:npcs,n.components = 3L)
@@ -89,7 +76,7 @@ doublets <-function(dfso){
  
   ## Homotypic Doublet Proportion Estimate -------------------------------------------------------------------------------------
   homotypic.prop <- modelHomotypic(dfso$annot)
-  perc = 0.005 * (length(colnames(dfso))/1000)
+  perc = 0.1 #* (length(colnames(dfso))/1000)
   nExp_poi <- round(perc*length(colnames(dfso)))#dfso@cell.names
   nExp_poi.adj <- round(nExp_poi*(1-homotypic.prop))
   print("xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx")
@@ -101,27 +88,17 @@ doublets <-function(dfso){
   return(dfso)
 }
 
-#convertHumanGeneList <- function(x){
+convertHumanGeneList <- function(x){
   
- # require("biomaRt")
-  #human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
-  #mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
+  require("biomaRt")
+  human = useMart("ensembl", dataset = "hsapiens_gene_ensembl")
+  mouse = useMart("ensembl", dataset = "mmusculus_gene_ensembl")
   
- # genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
+  genesV2 = getLDS(attributes = c("hgnc_symbol"), filters = "hgnc_symbol", values = x , mart = human, attributesL = c("mgi_symbol"), martL = mouse, uniqueRows=T)
   
- # humanx <- unique(genesV2[, 2])
+  humanx <- unique(genesV2[, 2])
   
- # return(humanx)
-#}
-
-
-
-
-convertHumanGeneList  <- function(gns){
-  egs <- mapIds(org.Hs.eg.db, gns, "ENTREZID","SYMBOL")
-  mapped <- select(Orthology.eg.db, egs, "Mus.musculus","Homo.sapiens")
-  mapped$MUS <- mapIds(org.Mm.eg.db, as.character(mapped$Mus.musculus), "SYMBOL", "ENTREZID")
-  return(as.character(unlist(mapped$MUS )))
+  return(humanx)
 }
 
 
@@ -129,32 +106,13 @@ convertHumanGeneList  <- function(gns){
 if(ref=="hg38"){so[["percent.mt"]] <- PercentageFeatureSet(so, pattern = "^MT-")}
 if(ref=="mm10"){so[["percent.mt"]] <- PercentageFeatureSet(so, pattern = "^mt-")}
 
-#so <- subset(so, subset = nFeature_RNA > 200)
-#nCount_out = outliers_mad(so$nCount_RNA,threshold = 3)$LL_CI_MAD#
-#nFeature_out = outliers_mad(so$nFeature_RNA,threshold = 3)$LL_CI_MAD
-#mt_out = outliers_mad(so$percent.mt,threshold = 3)$UL_CI_MAD
+so <- subset(so, subset = nFeature_RNA > 200)
+nCount_out = outliers_mad(so$nCount_RNA,threshold = 3)$LL_CI_MAD
+nFeature_out = outliers_mad(so$nFeature_RNA,threshold = 3)$LL_CI_MAD
+mt_out = outliers_mad(so$percent.mt,threshold = 3)$UL_CI_MAD
 
-#so <- subset(so, subset = nFeature_RNA > nFeature_out & nCount_RNA > nFeature_out & percent.mt < mt_out)
+so <- subset(so, subset = nFeature_RNA > nFeature_out & nCount_RNA > nFeature_out & percent.mt < mt_out)
 
-so <- RunMiQC(so, percent.mt = "percent.mt", nFeature_RNA = "nFeature_RNA", posterior.cutoff = 0.7,model.slot = "flexmix_model") 
-so = subset(so, miQC.keep == "keep")
-
-if(ref=="hg38"){
-s.genes <- cc.genes$s.genes
-g2m.genes <- cc.genes$g2m.genes
-}
-
-if(ref=="mm10"){
-s.genes <- convertHumanGeneList(cc.genes$s.genes)
-g2m.genes <- convertHumanGeneList(cc.genes$g2m.genes)
-}
-
-
-so = SCTransform(so)
-so = NormalizeData(so, normalization.method = "LogNormalize", scale.factor = 10000,assay = "RNA")
-so = ScaleData(so,assay = "RNA")
-
-so = CellCycleScoring(so,s.features = s.genes, g2m.features = g2m.genes, set.ident = TRUE)
 
 
 so = seuratClustering(so)
@@ -201,15 +159,7 @@ dfso = doublets(so)
 so$DF_hi.lo = dfso[[tail(names(dfso@meta.data),1)]]
 so=subset(so,cells=names(so$DF_hi.lo)[so$DF_hi.lo =="Singlet"])
 
-
-
-
-
-
-
 saveRDS(so,outFile)
-
-
 
 
 
